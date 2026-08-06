@@ -175,7 +175,8 @@ async function iniciarVigilancia() {
     while (true) {
         const horaActual = obtenerHoraColombia();
         
-        if (horaActual >= 8) {
+        // 🔥 Trabaja si es mayor/igual a 8 AM Y menor a las 10 PM (22) 🔥
+        if (horaActual >= 8 && horaActual < 22) {
             // 1. Ejecuta la revisión
             await verificarStockProveedor();
             
@@ -186,7 +187,7 @@ async function iniciarVigilancia() {
             await new Promise(r => setTimeout(r, 2700000)); 
         } else {
             // Mensaje nocturno actualizado
-            console.log("[Noche COP] Horario inactivo. Bot en reposo. Vuelve a las 8 AM a volver a revisar.");
+            console.log("[Noche COP] Horario inactivo (10 PM - 8 AM). Bot en reposo. Vuelve a las 8 AM a volver a revisar.");
             await new Promise(r => setTimeout(r, 900000)); // Revisa cada 15 min si ya son las 8
         }
     }
