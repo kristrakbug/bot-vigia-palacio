@@ -10,20 +10,23 @@ const TOKEN_SECRETO = "WexaitBot2026_Admin";
 
 const URL_LOGIN_MAYORISTAS = "https://mayoristasstreaming.com/login";
 
-// Tomará los datos de las Variables de Entorno en Railway
 const CORREO_PROVEEDOR = process.env.PROVEEDOR2_EMAIL;
 const CONTRASENA_PROVEEDOR = process.env.PROVEEDOR2_PASSWORD;
 
-// ⚠️ LISTA DE PRODUCTOS DE MAYORISTAS A VIGILAR ⚠️
-// Solo dejé uno de ejemplo. ¡Debes agregar los demás con sus IDs reales de Wexait y URLs!
-const PRODUCTOS_A_VIGILAR = [
-    {
-        id_wexait: 10, // ID del producto en tu tienda Wexait
-        nombre: "PLEX PANTALLA (premium)",
-        url_proveedor: "https://mayoristasstreaming.com/product/plex-pantalla-premium/"
-    },
-    // Añade el resto de tu catálogo de Mayoristas aquí siguiendo la misma estructura...
-];
+async function obtenerProductosDesdeWexait() {
+    try {
+        console.log("\n[*] Consultando a Wexait la lista de productos de MAYORISTAS actualizada...");
+        const res = await axios.get("https://wexait.com/api/lista-vigilancia-mayoristas");
+        
+        if (res.data && res.data.length > 0) {
+            console.log(`✅ Wexait devolvió ${res.data.length} productos para vigilar en Mayoristas.`);
+            return res.data;
+        }
+    } catch (error) {
+        console.log("[!] Error obteniendo la lista de Wexait. Asegúrate de que la ruta exista.");
+    }
+    return [];
+}
 
 async function actualizarProductoWexait(producto_id, hay_stock, cantidad_stock, nombre_referencia) {
     const estado_api = hay_stock ? 1 : 0;
@@ -48,6 +51,13 @@ async function actualizarProductoWexait(producto_id, hay_stock, cantidad_stock, 
 // 2. MOTOR DE SCRAPING 
 // ==============================================================================
 async function verificarStockProveedor() {
+    const PRODUCTOS_A_VIGILAR = await obtenerProductosDesdeWexait();
+    
+    if (PRODUCTOS_A_VIGILAR.length === 0) {
+        console.log("⚠️ No hay productos con enlace de Mayoristas en tu panel de Wexait. Saltando ciclo...");
+        return; 
+    }
+
     console.log("\n[+] Iniciando inspección de inventario en Mayoristas con Puppeteer...");
     let browser;
     try {
@@ -97,10 +107,9 @@ async function verificarStockProveedor() {
                 await page.goto(prod.url_proveedor, { waitUntil: 'networkidle2', timeout: 60000 });
                 console.log("✅ Producto cargado.");
                 
-                await new Promise(r => setTimeout(r, 4000)); // Damos tiempo a que renderice el botón
+                await new Promise(r => setTimeout(r, 4000)); 
 
                 const resultadoScraping = await page.evaluate(() => {
-                    // Lógica segura de WooCommerce
                     const addBtn = document.querySelector('.single_add_to_cart_button, button[name="add-to-cart"], .add_to_cart_button');
                     const outOfStockLabel = document.querySelector('.out-of-stock');
                     
@@ -109,16 +118,17 @@ async function verificarStockProveedor() {
                         estado = 'agotado';
                     }
 
-                    // Extraer cantidad de stock de la etiqueta de WooCommerce
+                    // 🔥 LÓGICA DE EXTRACCIÓN DE NÚMERO MEJORADA PARA MAYORISTAS 🔥
                     let numeroStock = 0;
-                    const stockElement = document.querySelector('.stock.in-stock');
-                    if (stockElement) {
+                    // Buscamos específicamente el span con clase 'stock' que está dentro de 'product-stock'
+                    const stockElement = document.querySelector('.product-stock .stock') || document.querySelector('.stock.in-stock');
+                    
+                    if (stockElement && stockElement.innerText) {
                         const match = stockElement.innerText.match(/\d+/);
                         if (match) {
                             numeroStock = parseInt(match[0], 10);
                         }
                     } else if (estado === 'disponible') {
-                        // Si está disponible pero el proveedor no muestra el número exacto, ponemos 99 por defecto
                         numeroStock = 99;
                     }
 
@@ -128,14 +138,12 @@ async function verificarStockProveedor() {
                 const hayStock = (resultadoScraping.estado === 'disponible');
                 console.log(`[🔍] Diagnóstico: Estado = ${resultadoScraping.estado.toUpperCase()}, Stock leído = ${resultadoScraping.stockLeido}`);
 
-                // Enviamos los datos a la API de Wexait
                 await actualizarProductoWexait(prod.id_wexait, hayStock, resultadoScraping.stockLeido, prod.nombre);
 
             } catch (error) {
                 console.log(`[!] Error al inspeccionar ${prod.nombre}: ${error.message}`);
             }
             
-            // Pausa entre productos para no saturar al proveedor
             await new Promise(r => setTimeout(r, 2500));
         }
 
@@ -164,7 +172,6 @@ async function iniciarVigilancia() {
     console.log("🚀 BOT VIGÍA (MAYORISTAS STREAMING) INICIADO");
     console.log("=======================================================");
 
-    // Ejecución inmediata al arrancar el bot en Railway
     await verificarStockProveedor();
     console.log("[*] Escaneo inicial completado. Iniciando bucle...");
 
@@ -172,7 +179,7 @@ async function iniciarVigilancia() {
         const horaActual = obtenerHoraColombia();
         
         if (horaActual >= 8) {
-            await new Promise(r => setTimeout(r, 2700000)); // Espera 45 minutos antes del siguiente
+            await new Promise(r => setTimeout(r, 2700000)); 
             await verificarStockProveedor();
             console.log("[*] Misión terminada. Esperando 45 minutos para el siguiente escaneo...");
         } else {
@@ -182,5 +189,4 @@ async function iniciarVigilancia() {
     }
 }
 
-// Arranque de la máquina
 iniciarVigilancia();
