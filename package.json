@@ -1,0 +1,14 @@
+{
+  "name": "bot-vigia-mayoristas",
+  "version": "1.0.0",
+  "description": "Bot vigía de inventario para Mayoristas Streaming",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "dotenv": "^16.4.5",
+    "puppeteer": "^22.6.0"
+  }
+}
