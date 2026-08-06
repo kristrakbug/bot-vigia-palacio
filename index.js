@@ -172,22 +172,24 @@ async function iniciarVigilancia() {
     console.log("🚀 BOT VIGÍA (MAYORISTAS STREAMING) INICIADO");
     console.log("=======================================================");
 
-    await verificarStockProveedor();
-    console.log("[*] Escaneo inicial completado. Iniciando bucle...");
-
     while (true) {
         const horaActual = obtenerHoraColombia();
         
         if (horaActual >= 8) {
-            await new Promise(r => setTimeout(r, 2700000)); 
+            // 1. Ejecuta la revisión
             await verificarStockProveedor();
-            console.log("[*] Misión terminada. Esperando 45 minutos para el siguiente escaneo...");
+            
+            // 2. Avisa que ha terminado
+            console.log("[*] Misión terminada. Esperando 45 minutos para el siguiente escaneo...\n");
+            
+            // 3. Hace la pausa (2700000 ms)
+            await new Promise(r => setTimeout(r, 2700000)); 
         } else {
-            console.log("[Noche COP] Horario inactivo. Bot en reposo nocturno (12 AM - 8 AM).");
-            await new Promise(r => setTimeout(r, 900000)); 
+            // Mensaje nocturno actualizado
+            console.log("[Noche COP] Horario inactivo. Bot en reposo. Vuelve a las 8 AM a volver a revisar.");
+            await new Promise(r => setTimeout(r, 900000)); // Revisa cada 15 min si ya son las 8
         }
     }
 }
 
 iniciarVigilancia();
-
