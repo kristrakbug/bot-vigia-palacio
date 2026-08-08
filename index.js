@@ -222,4 +222,4 @@ async function iniciarVigilancia() {
     }
 }
 
-iniciarVigilancia();
+iniciarVigilancia(); 
