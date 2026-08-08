@@ -110,26 +110,31 @@ async function verificarStockProveedor() {
                 await new Promise(r => setTimeout(r, 4000)); 
 
                 const resultadoScraping = await page.evaluate(() => {
-                    const addBtn = document.querySelector('.single_add_to_cart_button, button[name="add-to-cart"], .add_to_cart_button');
-                    const outOfStockLabel = document.querySelector('.out-of-stock');
-                    
-                    let estado = 'disponible';
-                    if (!addBtn || addBtn.disabled || outOfStockLabel) {
-                        estado = 'agotado';
-                    }
-
-                    // 🔥 LÓGICA DE EXTRACCIÓN DE NÚMERO MEJORADA PARA MAYORISTAS 🔥
                     let numeroStock = 0;
-                    // Buscamos específicamente el span con clase 'stock' que está dentro de 'product-stock'
-                    const stockElement = document.querySelector('.product-stock .stock') || document.querySelector('.stock.in-stock');
                     
+                    // 1. Buscamos primero el número físico
+                    const stockElement = document.querySelector('.product-stock .stock') || document.querySelector('.stock.in-stock');
                     if (stockElement && stockElement.innerText) {
                         const match = stockElement.innerText.match(/\d+/);
                         if (match) {
                             numeroStock = parseInt(match[0], 10);
                         }
-                    } else if (estado === 'disponible') {
-                        numeroStock = 99;
+                    }
+
+                    // 2. Buscamos botones y etiquetas
+                    const addBtn = document.querySelector('.single_add_to_cart_button, button[name="add-to-cart"], .add_to_cart_button');
+                    const outOfStockLabel = document.querySelector('.out-of-stock');
+                    
+                    let estado = 'agotado'; // Asumimos lo peor por defecto
+
+                    // 🔥 LA REGLA DE ORO: Si leemos que hay más de 0, está disponible obligatoriamente 🔥
+                    if (numeroStock > 0) {
+                        estado = 'disponible';
+                    } 
+                    // Si no vimos número, pero el botón está vivo y no hay letrero de agotado
+                    else if (addBtn && !addBtn.disabled && !outOfStockLabel) {
+                        estado = 'disponible';
+                        numeroStock = 99; // Stock de emergencia
                     }
 
                     return { estado, stockLeido: numeroStock };
@@ -175,20 +180,13 @@ async function iniciarVigilancia() {
     while (true) {
         const horaActual = obtenerHoraColombia();
         
-        // 🔥 Trabaja si es mayor/igual a 8 AM Y menor a las 10 PM (22) 🔥
         if (horaActual >= 8 && horaActual < 22) {
-            // 1. Ejecuta la revisión
             await verificarStockProveedor();
-            
-            // 2. Avisa que ha terminado
             console.log("[*] Misión terminada. Esperando 45 minutos para el siguiente escaneo...\n");
-            
-            // 3. Hace la pausa (2700000 ms)
             await new Promise(r => setTimeout(r, 2700000)); 
         } else {
-            // Mensaje nocturno actualizado
             console.log("[Noche COP] Horario inactivo (10 PM - 8 AM). Bot en reposo. Vuelve a las 8 AM a volver a revisar.");
-            await new Promise(r => setTimeout(r, 900000)); // Revisa cada 15 min si ya son las 8
+            await new Promise(r => setTimeout(r, 900000)); 
         }
     }
 }
