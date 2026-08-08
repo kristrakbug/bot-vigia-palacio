@@ -125,7 +125,7 @@ async function verificarStockProveedor() {
                     const addBtn = document.querySelector('.single_add_to_cart_button, button[name="add-to-cart"], .add_to_cart_button');
                     const outOfStockLabel = document.querySelector('.out-of-stock');
                     
-                    let estado = 'agotado'; // Asumimos lo peor por defecto
+                    let estado = 'agotado'; 
 
                     // 🔥 LA REGLA DE ORO: Si leemos que hay más de 0, está disponible obligatoriamente 🔥
                     if (numeroStock > 0) {
@@ -163,7 +163,7 @@ async function verificarStockProveedor() {
 }
 
 // ==============================================================================
-// 3. BUCLE DE TIEMPO 
+// 3. BUCLE DE TIEMPO EXACTO (RELOJ SUIZO)
 // ==============================================================================
 function obtenerHoraColombia() {
     const ahora = new Date();
@@ -177,16 +177,47 @@ async function iniciarVigilancia() {
     console.log("🚀 BOT VIGÍA (MAYORISTAS STREAMING) INICIADO");
     console.log("=======================================================");
 
+    // Ejecuta un escaneo inicial apenas se prende el bot (solo si es de día)
+    const horaInicio = obtenerHoraColombia();
+    if (horaInicio >= 8 && horaInicio < 22) {
+        await verificarStockProveedor();
+    } else {
+        console.log("[Noche COP] Bot iniciado de noche. Reposando hasta las 8 AM.");
+    }
+
     while (true) {
+        const ahora = new Date();
+        const minutos = ahora.getMinutes();
+        const segundos = ahora.getSeconds();
+        const milisegundos = ahora.getMilliseconds();
+
+        // Calcular cuántos minutos faltan para llegar al :00 o :30 más cercano
+        let minutosParaEsperar = 0;
+        if (minutos < 30) {
+            minutosParaEsperar = 30 - minutos;
+        } else {
+            minutosParaEsperar = 60 - minutos;
+        }
+
+        // Convertimos todo a milisegundos para que el temporizador sea exacto
+        const msParaEsperar = (minutosParaEsperar * 60 * 1000) - (segundos * 1000) - milisegundos;
+
+        // Formatear la hora a la que despertará para mostrarla en consola
+        const proximoEscaneo = new Date(ahora.getTime() + msParaEsperar);
+        const formateadorHora = new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: true });
+        
+        console.log(`\n[*] Pausa activada. Esperando hasta las ${formateadorHora.format(proximoEscaneo)} para el siguiente ciclo...`);
+        
+        // 1. Duerme exactamente hasta la próxima media hora
+        await new Promise(r => setTimeout(r, msParaEsperar)); 
+        
+        // 2. Despierta y verifica si está en horario de trabajo
         const horaActual = obtenerHoraColombia();
         
         if (horaActual >= 8 && horaActual < 22) {
             await verificarStockProveedor();
-            console.log("[*] Misión terminada. Esperando 45 minutos para el siguiente escaneo...\n");
-            await new Promise(r => setTimeout(r, 2700000)); 
         } else {
-            console.log("[Noche COP] Horario inactivo (10 PM - 8 AM). Bot en reposo. Vuelve a las 8 AM a volver a revisar.");
-            await new Promise(r => setTimeout(r, 900000)); 
+            console.log("[Noche COP] Horario inactivo (10 PM - 8 AM). Bot en reposo.");
         }
     }
 }
