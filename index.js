@@ -68,9 +68,10 @@ async function verificarStockProveedor() {
                 '--disable-setuid-sandbox', 
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
+                '--disable-software-rasterizer',
                 '--no-first-run',
                 '--no-zygote',
-                '--single-process'
+                '--disable-features=site-per-process' // Ahorra mucha memoria aislando procesos
             ]
         });
         const page = await browser.newPage();
@@ -222,4 +223,4 @@ async function iniciarVigilancia() {
     }
 }
 
-iniciarVigilancia(); 
+iniciarVigilancia();
