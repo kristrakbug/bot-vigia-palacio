@@ -1,4 +1,7 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
+
 const axios = require('axios');
 require('dotenv').config(); 
 
@@ -58,7 +61,7 @@ async function verificarStockProveedor() {
         return; 
     }
 
-    console.log("\n[+] Iniciando inspección de inventario en Mayoristas con Puppeteer...");
+    console.log("\n[+] Iniciando inspección de inventario en Mayoristas con Puppeteer Stealth...");
     let browser;
     try {
         browser = await puppeteer.launch({
@@ -71,7 +74,8 @@ async function verificarStockProveedor() {
                 '--disable-software-rasterizer',
                 '--no-first-run',
                 '--no-zygote',
-                '--disable-features=site-per-process' // Ahorra mucha memoria aislando procesos
+                '--disable-features=site-per-process',
+                '--disable-blink-features=AutomationControlled' // Desactiva la señalización de bot
             ]
         });
         const page = await browser.newPage();
@@ -86,9 +90,16 @@ async function verificarStockProveedor() {
             console.log("[*] Entrando a Mayoristas Streaming...");
             await page.goto(URL_LOGIN_MAYORISTAS, { waitUntil: 'networkidle2', timeout: 60000 });
             
-            await page.type('input[data-key="user_email"]', CORREO_PROVEEDOR);
-            await page.type('input[data-key="user_password"]', CONTRASENA_PROVEEDOR);
+            // Pausa humana de 1.5 a 3 segundos
+            await new Promise(r => setTimeout(r, Math.random() * 1500 + 1500));
             
+            // Tipeo simulando pulsaciones humanas
+            await page.type('input[data-key="user_email"]', CORREO_PROVEEDOR, { delay: 60 });
+            await new Promise(r => setTimeout(r, 600));
+            await page.type('input[data-key="user_password"]', CONTRASENA_PROVEEDOR, { delay: 60 });
+            
+            await new Promise(r => setTimeout(r, 800));
+
             await Promise.all([
                 page.evaluate(() => {
                     const btnAcceder = document.querySelector('#um-submit-btn');
