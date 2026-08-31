@@ -75,7 +75,7 @@ async function verificarStockProveedor() {
                 '--no-first-run',
                 '--no-zygote',
                 '--disable-features=site-per-process',
-                '--disable-blink-features=AutomationControlled' // Desactiva la señalización de bot
+                '--disable-blink-features=AutomationControlled'
             ]
         });
         const page = await browser.newPage();
@@ -93,6 +93,11 @@ async function verificarStockProveedor() {
             // Pausa humana de 1.5 a 3 segundos
             await new Promise(r => setTimeout(r, Math.random() * 1500 + 1500));
             
+            // Validación de variables de entorno para evitar fallos silenciosos
+            if (!CORREO_PROVEEDOR || !CONTRASENA_PROVEEDOR) {
+                throw new Error("Las variables PROVEEDOR2_EMAIL o PROVEEDOR2_PASSWORD están vacías o no existen en Railway.");
+            }
+
             // Tipeo simulando pulsaciones humanas
             await page.type('input[data-key="user_email"]', CORREO_PROVEEDOR, { delay: 60 });
             await new Promise(r => setTimeout(r, 600));
@@ -109,7 +114,8 @@ async function verificarStockProveedor() {
             ]);
             console.log("✅ Sesión iniciada.");
         } catch (err) {
-            console.log("[?] Omitiendo login (es posible que ya esté logueado o cargó muy rápido).");
+            // AHORA SÍ MOSTRARÁ EL ERROR REAL EN CONSOLA
+            console.log(`[!] Error crítico en el LOGIN: ${err.message}`);
         }
 
         // --- 2. NAVEGAR Y VERIFICAR CADA PRODUCTO ---
