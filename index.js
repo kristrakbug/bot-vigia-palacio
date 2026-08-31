@@ -61,7 +61,7 @@ async function verificarStockProveedor() {
         return; 
     }
 
-    console.log("\n[+] Iniciando inspección de inventario en Mayoristas con Puppeteer Stealth...");
+    console.log("\n[+] Iniciando inspección de inventario con Puppeteer Stealth Avanzado...");
     let browser;
     try {
         browser = await puppeteer.launch({
@@ -83,27 +83,42 @@ async function verificarStockProveedor() {
         await page.setDefaultNavigationTimeout(60000); 
 
         await page.setViewport({ width: 1366, height: 768 });
+        // User Agent ultra estándar para no levantar sospechas
         await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        await page.setExtraHTTPHeaders({
+            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
+        });
 
-        // --- 1. LOGIN ---
+        // --- 1. LOGIN (CON BYPASS DE CLOUDFLARE) ---
         try {
             console.log("[*] Entrando a Mayoristas Streaming...");
-            await page.goto(URL_LOGIN_MAYORISTAS, { waitUntil: 'networkidle2', timeout: 60000 });
+            // Usamos 'domcontentloaded' para que Puppeteer no se quede trabado si Cloudflare hace redirecciones infinitas
+            await page.goto(URL_LOGIN_MAYORISTAS, { waitUntil: 'domcontentloaded', timeout: 60000 });
             
-            // Pausa humana de 1.5 a 3 segundos
-            await new Promise(r => setTimeout(r, Math.random() * 1500 + 1500));
-            
-            // Validación de variables de entorno para evitar fallos silenciosos
+            console.log("[*] Resolviendo posible barrera de Cloudflare...");
+
+            // TÁCTICA ANTI-CLOUDFLARE: Movimientos de ratón simulados. 
+            // Turnstile (la verificación) a menudo se autocompleta si detecta "ruido humano".
+            for (let i = 0; i < 12; i++) {
+                await page.mouse.move(Math.random() * 800, Math.random() * 600);
+                await new Promise(r => setTimeout(r, Math.random() * 400 + 200));
+            }
+
+            // Damos hasta 45 segundos para que la página de Cloudflare haga la transición automática al login
+            const selectorEmail = 'input[data-key="user_email"]';
+            await page.waitForSelector(selectorEmail, { timeout: 45000 });
+            console.log("[*] ¡Barrera superada! Formulario detectado.");
+
             if (!CORREO_PROVEEDOR || !CONTRASENA_PROVEEDOR) {
-                throw new Error("Las variables PROVEEDOR2_EMAIL o PROVEEDOR2_PASSWORD están vacías o no existen en Railway.");
+                throw new Error("Las variables PROVEEDOR2_EMAIL o PROVEEDOR2_PASSWORD están vacías.");
             }
 
             // Tipeo simulando pulsaciones humanas
-            await page.type('input[data-key="user_email"]', CORREO_PROVEEDOR, { delay: 60 });
-            await new Promise(r => setTimeout(r, 600));
-            await page.type('input[data-key="user_password"]', CONTRASENA_PROVEEDOR, { delay: 60 });
-            
+            await page.type(selectorEmail, CORREO_PROVEEDOR, { delay: 65 });
             await new Promise(r => setTimeout(r, 800));
+            await page.type('input[data-key="user_password"]', CONTRASENA_PROVEEDOR, { delay: 70 });
+            
+            await new Promise(r => setTimeout(r, 1000));
 
             await Promise.all([
                 page.evaluate(() => {
@@ -112,17 +127,16 @@ async function verificarStockProveedor() {
                 }),
                 page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {})
             ]);
-            console.log("✅ Sesión iniciada.");
+            console.log("✅ Sesión iniciada con éxito.");
         } catch (err) {
-            // AHORA SÍ MOSTRARÁ EL ERROR REAL EN CONSOLA
-            console.log(`[!] Error crítico en el LOGIN: ${err.message}`);
+            console.log(`[!] Error crítico en el LOGIN (Posible bloqueo permanente de Cloudflare): ${err.message}`);
         }
 
         // --- 2. NAVEGAR Y VERIFICAR CADA PRODUCTO ---
         for (const prod of PRODUCTOS_A_VIGILAR) {
             console.log(`\n🚀 Iniciando MISIÓN DE VIGILANCIA para: ${prod.nombre}`);
             try {
-                await page.goto(prod.url_proveedor, { waitUntil: 'networkidle2', timeout: 60000 });
+                await page.goto(prod.url_proveedor, { waitUntil: 'domcontentloaded', timeout: 60000 });
                 console.log("✅ Producto cargado.");
                 
                 await new Promise(r => setTimeout(r, 4000)); 
@@ -130,7 +144,6 @@ async function verificarStockProveedor() {
                 const resultadoScraping = await page.evaluate(() => {
                     let numeroStock = 0;
                     
-                    // 1. Buscamos primero el número físico
                     const stockElement = document.querySelector('.product-stock .stock') || document.querySelector('.stock.in-stock');
                     if (stockElement && stockElement.innerText) {
                         const match = stockElement.innerText.match(/\d+/);
@@ -139,20 +152,17 @@ async function verificarStockProveedor() {
                         }
                     }
 
-                    // 2. Buscamos botones y etiquetas
                     const addBtn = document.querySelector('.single_add_to_cart_button, button[name="add-to-cart"], .add_to_cart_button');
                     const outOfStockLabel = document.querySelector('.out-of-stock');
                     
                     let estado = 'agotado'; 
 
-                    // 🔥 LA REGLA DE ORO: Si leemos que hay más de 0, está disponible obligatoriamente 🔥
                     if (numeroStock > 0) {
                         estado = 'disponible';
                     } 
-                    // Si no vimos número, pero el botón está vivo y no hay letrero de agotado
                     else if (addBtn && !addBtn.disabled && !outOfStockLabel) {
                         estado = 'disponible';
-                        numeroStock = 99; // Stock de emergencia
+                        numeroStock = 99;
                     }
 
                     return { estado, stockLeido: numeroStock };
@@ -195,7 +205,6 @@ async function iniciarVigilancia() {
     console.log("🚀 BOT VIGÍA (MAYORISTAS STREAMING) INICIADO");
     console.log("=======================================================");
 
-    // Ejecuta un escaneo inicial apenas se prende el bot (solo si es de día)
     const horaInicio = obtenerHoraColombia();
     if (horaInicio >= 8 && horaInicio < 22) {
         await verificarStockProveedor();
@@ -209,7 +218,6 @@ async function iniciarVigilancia() {
         const segundos = ahora.getSeconds();
         const milisegundos = ahora.getMilliseconds();
 
-        // Calcular cuántos minutos faltan para llegar al :00 o :30 más cercano
         let minutosParaEsperar = 0;
         if (minutos < 30) {
             minutosParaEsperar = 30 - minutos;
@@ -217,19 +225,14 @@ async function iniciarVigilancia() {
             minutosParaEsperar = 60 - minutos;
         }
 
-        // Convertimos todo a milisegundos para que el temporizador sea exacto
         const msParaEsperar = (minutosParaEsperar * 60 * 1000) - (segundos * 1000) - milisegundos;
-
-        // Formatear la hora a la que despertará para mostrarla en consola
         const proximoEscaneo = new Date(ahora.getTime() + msParaEsperar);
         const formateadorHora = new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: true });
         
         console.log(`\n[*] Pausa activada. Esperando hasta las ${formateadorHora.format(proximoEscaneo)} para el siguiente ciclo...`);
         
-        // 1. Duerme exactamente hasta la próxima media hora
         await new Promise(r => setTimeout(r, msParaEsperar)); 
         
-        // 2. Despierta y verifica si está en horario de trabajo
         const horaActual = obtenerHoraColombia();
         
         if (horaActual >= 8 && horaActual < 22) {
