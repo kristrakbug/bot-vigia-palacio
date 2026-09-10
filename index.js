@@ -1,12 +1,9 @@
-const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 const axios = require('axios');
 require('dotenv').config(); 
-
-const app = express();
 
 // ==============================================================================
 // 1. CONFIGURACIÓN PRINCIPAL (PALACIO DIGITAL)
@@ -22,7 +19,6 @@ const CONTRASENA_PROVEEDOR = process.env.PALACIO_PASSWORD;
 async function obtenerProductosDesdeWexait() {
     try {
         console.log("\n[*] Consultando a Wexait la lista de productos de PALACIO DIGITAL...");
-        // Asegúrate de que esta URL exista en tu Laravel
         const res = await axios.get("https://wexait.com/api/lista-vigilancia-palacio"); 
         
         if (res.data && res.data.length > 0) {
@@ -120,11 +116,10 @@ async function verificarStockProveedor() {
                     let estado = 'agotado'; 
                     let numeroStock = 0;
 
-                    // 1. Buscamos el texto exacto basándonos en tu captura
+                    // 1. Buscamos el texto exacto
                     const stockElement = document.querySelector('.product-stock .stock') || document.querySelector('.stock');
                     
                     if (stockElement && stockElement.innerText) {
-                        // Extrae solo los números del texto (ej. "55 disponibles" -> 55)
                         const match = stockElement.innerText.match(/\d+/);
                         if (match) {
                             numeroStock = parseInt(match[0], 10);
@@ -136,7 +131,7 @@ async function verificarStockProveedor() {
                     const addBtn = document.querySelector('button[name="add-to-cart"], .single_add_to_cart_button');
                     if (estado === 'agotado' && addBtn && addBtn.offsetWidth > 0 && addBtn.offsetHeight > 0) {
                         estado = 'disponible';
-                        numeroStock = 99; // Valor por defecto si hay botón pero no leímos el número
+                        numeroStock = 99; 
                     }
 
                     return { estado, stockLeido: numeroStock };
@@ -165,7 +160,7 @@ async function verificarStockProveedor() {
 }
 
 // ==============================================================================
-// 3. BUCLE DE TIEMPO Y SERVIDOR EXPRESS (PARA RAILWAY)
+// 3. BUCLE DE TIEMPO
 // ==============================================================================
 function obtenerHoraColombia() {
     const ahora = new Date();
@@ -207,14 +202,4 @@ async function iniciarVigilancia() {
     }
 }
 
-// Ruta básica para que Railway detecte vida
-app.get('/', (req, res) => {
-    res.send('👀 Bot Vigía Palacio Digital está monitoreando correctamente...');
-});
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚂 Servidor Express levantado en puerto ${PORT} para mantener viva la conexión en Railway.`);
-    // Lanzamos el bucle del bot de forma asíncrona para que no bloquee el puerto
-    iniciarVigilancia();
-});
+iniciarVigilancia();
