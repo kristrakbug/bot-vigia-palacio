@@ -1,3 +1,4 @@
+const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
@@ -5,28 +6,31 @@ puppeteer.use(StealthPlugin());
 const axios = require('axios');
 require('dotenv').config(); 
 
+const app = express();
+
 // ==============================================================================
-// 1. CONFIGURACIÓN PRINCIPAL
+// 1. CONFIGURACIÓN PRINCIPAL (PALACIO DIGITAL)
 // ==============================================================================
 const URL_WEXAIT = "https://wexait.com/api/v1/actualizar-inventario-secreto";
 const TOKEN_SECRETO = "WexaitBot2026_Admin";
 
-const URL_LOGIN_MAYORISTAS = "https://mayoristasstreaming.com/login";
+const URL_LOGIN_PALACIO = "https://palaciodigital.net/login/";
 
-const CORREO_PROVEEDOR = process.env.PROVEEDOR2_EMAIL;
-const CONTRASENA_PROVEEDOR = process.env.PROVEEDOR2_PASSWORD;
+const CORREO_PROVEEDOR = process.env.PALACIO_EMAIL;
+const CONTRASENA_PROVEEDOR = process.env.PALACIO_PASSWORD;
 
 async function obtenerProductosDesdeWexait() {
     try {
-        console.log("\n[*] Consultando a Wexait la lista de productos de MAYORISTAS actualizada...");
-        const res = await axios.get("https://wexait.com/api/lista-vigilancia-mayoristas");
+        console.log("\n[*] Consultando a Wexait la lista de productos de PALACIO DIGITAL...");
+        // Asegúrate de que esta URL exista en tu Laravel
+        const res = await axios.get("https://wexait.com/api/lista-vigilancia-palacio"); 
         
         if (res.data && res.data.length > 0) {
-            console.log(`✅ Wexait devolvió ${res.data.length} productos para vigilar en Mayoristas.`);
+            console.log(`✅ Wexait devolvió ${res.data.length} productos para vigilar.`);
             return res.data;
         }
     } catch (error) {
-        console.log("[!] Error obteniendo la lista de Wexait. Asegúrate de que la ruta exista.");
+        console.log("[!] Error obteniendo la lista de Wexait. Verifica la ruta.");
     }
     return [];
 }
@@ -42,7 +46,7 @@ async function actualizarProductoWexait(producto_id, hay_stock, cantidad_stock, 
 
         const res = await axios.post(URL_WEXAIT, params);
         if (res.status === 200) {
-            const accion = hay_stock ? `🟢 DISPONIBLE (Stock leído: ${cantidad_stock})` : "🔴 AGOTADO (OFF)";
+            const accion = hay_stock ? `🟢 DISPONIBLE (Stock: ${cantidad_stock})` : "🔴 AGOTADO (OFF)";
             console.log(`[*] Wexait sincronizado: ${nombre_referencia} -> ${accion}`);
         }
     } catch (error) {
@@ -51,17 +55,17 @@ async function actualizarProductoWexait(producto_id, hay_stock, cantidad_stock, 
 }
 
 // ==============================================================================
-// 2. MOTOR DE SCRAPING 
+// 2. MOTOR DE SCRAPING (EXTRACCIÓN EXACTA DE STOCK)
 // ==============================================================================
 async function verificarStockProveedor() {
     const PRODUCTOS_A_VIGILAR = await obtenerProductosDesdeWexait();
     
     if (PRODUCTOS_A_VIGILAR.length === 0) {
-        console.log("⚠️ No hay productos con enlace de Mayoristas en tu panel de Wexait. Saltando ciclo...");
+        console.log("⚠️ No hay productos para vigilar. Saltando ciclo...");
         return; 
     }
 
-    console.log("\n[+] Iniciando inspección de inventario con Puppeteer Stealth Avanzado...");
+    console.log("\n[+] Iniciando inspección de inventario en Palacio Digital...");
     let browser;
     try {
         browser = await puppeteer.launch({
@@ -70,106 +74,76 @@ async function verificarStockProveedor() {
                 '--no-sandbox', 
                 '--disable-setuid-sandbox', 
                 '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-software-rasterizer',
-                '--no-first-run',
-                '--no-zygote',
-                '--disable-features=site-per-process',
-                '--disable-blink-features=AutomationControlled'
+                '--disable-gpu'
             ]
         });
         const page = await browser.newPage();
         
         await page.setDefaultNavigationTimeout(60000); 
 
-        await page.setViewport({ width: 1366, height: 768 });
-        // User Agent ultra estándar para no levantar sospechas
-        await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
-        await page.setExtraHTTPHeaders({
-            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
-        });
-
-        // --- 1. LOGIN (CON BYPASS DE CLOUDFLARE) ---
+        // --- 1. LOGIN ---
         try {
-            console.log("[*] Entrando a Mayoristas Streaming...");
-            // Usamos 'domcontentloaded' para que Puppeteer no se quede trabado si Cloudflare hace redirecciones infinitas
-            await page.goto(URL_LOGIN_MAYORISTAS, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            console.log("[*] Entrando a Palacio Digital...");
+            await page.goto(URL_LOGIN_PALACIO, { waitUntil: 'domcontentloaded', timeout: 60000 });
             
-            console.log("[*] Resolviendo posible barrera de Cloudflare...");
+            await page.waitForSelector('input[data-key="username"]', { visible: true, timeout: 15000 });
 
-            // TÁCTICA ANTI-CLOUDFLARE: Movimientos de ratón simulados. 
-            // Turnstile (la verificación) a menudo se autocompleta si detecta "ruido humano".
-            for (let i = 0; i < 12; i++) {
-                await page.mouse.move(Math.random() * 800, Math.random() * 600);
-                await new Promise(r => setTimeout(r, Math.random() * 400 + 200));
-            }
-
-            // Damos hasta 45 segundos para que la página de Cloudflare haga la transición automática al login
-            const selectorEmail = 'input[data-key="user_email"]';
-            await page.waitForSelector(selectorEmail, { timeout: 45000 });
-            console.log("[*] ¡Barrera superada! Formulario detectado.");
-
-            if (!CORREO_PROVEEDOR || !CONTRASENA_PROVEEDOR) {
-                throw new Error("Las variables PROVEEDOR2_EMAIL o PROVEEDOR2_PASSWORD están vacías.");
-            }
-
-            // Tipeo simulando pulsaciones humanas
-            await page.type(selectorEmail, CORREO_PROVEEDOR, { delay: 65 });
-            await new Promise(r => setTimeout(r, 800));
+            await page.type('input[data-key="username"]', CORREO_PROVEEDOR, { delay: 65 });
             await page.type('input[data-key="user_password"]', CONTRASENA_PROVEEDOR, { delay: 70 });
             
-            await new Promise(r => setTimeout(r, 1000));
-
             await Promise.all([
                 page.evaluate(() => {
-                    const btnAcceder = document.querySelector('#um-submit-btn');
+                    const btnAcceder = document.querySelector('button[name="login"]') || document.querySelector('#um-submit-btn') || document.querySelector('input[type="submit"]');
                     if (btnAcceder) btnAcceder.click();
                 }),
                 page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {})
             ]);
             console.log("✅ Sesión iniciada con éxito.");
         } catch (err) {
-            console.log(`[!] Error crítico en el LOGIN (Posible bloqueo permanente de Cloudflare): ${err.message}`);
+            console.log(`[!] Error crítico en el LOGIN: ${err.message}`);
+            return;
         }
 
-        // --- 2. NAVEGAR Y VERIFICAR CADA PRODUCTO ---
+        // --- 2. NAVEGAR Y EXTRAER STOCK EXACTO ---
         for (const prod of PRODUCTOS_A_VIGILAR) {
-            console.log(`\n🚀 Iniciando MISIÓN DE VIGILANCIA para: ${prod.nombre}`);
+            console.log(`\n🚀 Revisando stock de: ${prod.nombre}`);
             try {
-                await page.goto(prod.url_proveedor, { waitUntil: 'domcontentloaded', timeout: 60000 });
-                console.log("✅ Producto cargado.");
+                await page.goto(prod.url_proveedor, { waitUntil: 'networkidle2', timeout: 60000 });
                 
-                await new Promise(r => setTimeout(r, 4000)); 
+                try {
+                    await page.waitForSelector('.product-stock, div.product', { visible: true, timeout: 15000 });
+                } catch (e) {
+                    console.log("⚠️ La página tardó un poco, verificando DOM directamente...");
+                }
 
                 const resultadoScraping = await page.evaluate(() => {
+                    let estado = 'agotado'; 
                     let numeroStock = 0;
+
+                    // 1. Buscamos el texto exacto basándonos en tu captura
+                    const stockElement = document.querySelector('.product-stock .stock') || document.querySelector('.stock');
                     
-                    const stockElement = document.querySelector('.product-stock .stock') || document.querySelector('.stock.in-stock');
                     if (stockElement && stockElement.innerText) {
+                        // Extrae solo los números del texto (ej. "55 disponibles" -> 55)
                         const match = stockElement.innerText.match(/\d+/);
                         if (match) {
                             numeroStock = parseInt(match[0], 10);
+                            if (numeroStock > 0) estado = 'disponible';
                         }
                     }
 
-                    const addBtn = document.querySelector('.single_add_to_cart_button, button[name="add-to-cart"], .add_to_cart_button');
-                    const outOfStockLabel = document.querySelector('.out-of-stock');
-                    
-                    let estado = 'agotado'; 
-
-                    if (numeroStock > 0) {
+                    // 2. Respaldo por si ocultan el número pero el botón de compra está activo
+                    const addBtn = document.querySelector('button[name="add-to-cart"], .single_add_to_cart_button');
+                    if (estado === 'agotado' && addBtn && addBtn.offsetWidth > 0 && addBtn.offsetHeight > 0) {
                         estado = 'disponible';
-                    } 
-                    else if (addBtn && !addBtn.disabled && !outOfStockLabel) {
-                        estado = 'disponible';
-                        numeroStock = 99;
+                        numeroStock = 99; // Valor por defecto si hay botón pero no leímos el número
                     }
 
                     return { estado, stockLeido: numeroStock };
                 });
 
                 const hayStock = (resultadoScraping.estado === 'disponible');
-                console.log(`[🔍] Diagnóstico: Estado = ${resultadoScraping.estado.toUpperCase()}, Stock leído = ${resultadoScraping.stockLeido}`);
+                console.log(`[🔍] Diagnóstico: ${resultadoScraping.estado.toUpperCase()} | Stock Leído: ${resultadoScraping.stockLeido}`);
 
                 await actualizarProductoWexait(prod.id_wexait, hayStock, resultadoScraping.stockLeido, prod.nombre);
 
@@ -185,13 +159,13 @@ async function verificarStockProveedor() {
     } finally {
         if (browser) {
             await browser.close();
-            console.log("[*] Navegador cerrado para mantener el servidor optimizado.");
+            console.log("[*] Navegador cerrado. Ciclo finalizado.");
         }
     }
 }
 
 // ==============================================================================
-// 3. BUCLE DE TIEMPO EXACTO (RELOJ SUIZO)
+// 3. BUCLE DE TIEMPO Y SERVIDOR EXPRESS (PARA RAILWAY)
 // ==============================================================================
 function obtenerHoraColombia() {
     const ahora = new Date();
@@ -202,7 +176,7 @@ function obtenerHoraColombia() {
 
 async function iniciarVigilancia() {
     console.log("=======================================================");
-    console.log("🚀 BOT VIGÍA (MAYORISTAS STREAMING) INICIADO");
+    console.log("🚀 BOT VIGÍA (PALACIO DIGITAL) INICIADO EN SEGUNDO PLANO");
     console.log("=======================================================");
 
     const horaInicio = obtenerHoraColombia();
@@ -213,23 +187,13 @@ async function iniciarVigilancia() {
     }
 
     while (true) {
+        const msParaEsperar = 45 * 60 * 1000; 
+        
         const ahora = new Date();
-        const minutos = ahora.getMinutes();
-        const segundos = ahora.getSeconds();
-        const milisegundos = ahora.getMilliseconds();
-
-        let minutosParaEsperar = 0;
-        if (minutos < 30) {
-            minutosParaEsperar = 30 - minutos;
-        } else {
-            minutosParaEsperar = 60 - minutos;
-        }
-
-        const msParaEsperar = (minutosParaEsperar * 60 * 1000) - (segundos * 1000) - milisegundos;
         const proximoEscaneo = new Date(ahora.getTime() + msParaEsperar);
         const formateadorHora = new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: true });
         
-        console.log(`\n[*] Pausa activada. Esperando hasta las ${formateadorHora.format(proximoEscaneo)} para el siguiente ciclo...`);
+        console.log(`\n[*] Pausa de 45 minutos activada. Siguiente ciclo a las ${formateadorHora.format(proximoEscaneo)}...`);
         
         await new Promise(r => setTimeout(r, msParaEsperar)); 
         
@@ -238,9 +202,19 @@ async function iniciarVigilancia() {
         if (horaActual >= 8 && horaActual < 22) {
             await verificarStockProveedor();
         } else {
-            console.log("[Noche COP] Horario inactivo (10 PM - 8 AM). Bot en reposo.");
+            console.log("[Noche COP] Horario inactivo (10 PM - 8 AM). El bot pasará este ciclo en reposo.");
         }
     }
 }
 
-iniciarVigilancia();
+// Ruta básica para que Railway detecte vida
+app.get('/', (req, res) => {
+    res.send('👀 Bot Vigía Palacio Digital está monitoreando correctamente...');
+});
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚂 Servidor Express levantado en puerto ${PORT} para mantener viva la conexión en Railway.`);
+    // Lanzamos el bucle del bot de forma asíncrona para que no bloquee el puerto
+    iniciarVigilancia();
+});
