@@ -51,7 +51,7 @@ async function actualizarProductoWexait(producto_id, hay_stock, cantidad_stock, 
 }
 
 // ==============================================================================
-// 2. MOTOR DE SCRAPING (EXTRACCIÓN EXACTA DE STOCK)
+// 2. MOTOR DE SCRAPING (EXTRACCIÓN EXACTA Y AUDITABLE)
 // ==============================================================================
 async function verificarStockProveedor() {
     const PRODUCTOS_A_VIGILAR = await obtenerProductosDesdeWexait();
@@ -103,6 +103,8 @@ async function verificarStockProveedor() {
         // --- 2. NAVEGAR Y EXTRAER STOCK EXACTO ---
         for (const prod of PRODUCTOS_A_VIGILAR) {
             console.log(`\n🚀 Revisando stock de: ${prod.nombre}`);
+            console.log(`🔗 URL Visitada: ${prod.url_proveedor}`); // <-- IMPRIMIR URL PARA AUDITAR
+            
             try {
                 await page.goto(prod.url_proveedor, { waitUntil: 'networkidle2', timeout: 60000 });
                 
@@ -115,29 +117,45 @@ async function verificarStockProveedor() {
                 const resultadoScraping = await page.evaluate(() => {
                     let estado = 'agotado'; 
                     let numeroStock = 0;
+                    let textoExtraido = 'No se encontró el texto';
 
-                    // 1. Buscamos el texto exacto
-                    const stockElement = document.querySelector('.product-stock .stock') || document.querySelector('.stock');
+                    // 1. Selector ultra-estricto basado exactamente en la captura de pantalla
+                    const stockElement = document.querySelector('.product-stock .stock');
                     
                     if (stockElement && stockElement.innerText) {
-                        const match = stockElement.innerText.match(/\d+/);
+                        textoExtraido = stockElement.innerText.trim();
+                        const match = textoExtraido.match(/\d+/);
                         if (match) {
                             numeroStock = parseInt(match[0], 10);
                             if (numeroStock > 0) estado = 'disponible';
                         }
+                    } else {
+                        // Si no lo encuentra, busca el padre directamente
+                        const parentElement = document.querySelector('.product-stock');
+                        if (parentElement && parentElement.innerText) {
+                            textoExtraido = parentElement.innerText.trim();
+                            const match = textoExtraido.match(/\d+/);
+                            if (match) {
+                                numeroStock = parseInt(match[0], 10);
+                                if (numeroStock > 0) estado = 'disponible';
+                            }
+                        }
                     }
 
-                    // 2. Respaldo por si ocultan el número pero el botón de compra está activo
+                    // 2. Respaldo por si el botón está activo pero ocultaron los números
                     const addBtn = document.querySelector('button[name="add-to-cart"], .single_add_to_cart_button');
                     if (estado === 'agotado' && addBtn && addBtn.offsetWidth > 0 && addBtn.offsetHeight > 0) {
                         estado = 'disponible';
                         numeroStock = 99; 
                     }
 
-                    return { estado, stockLeido: numeroStock };
+                    return { estado, stockLeido: numeroStock, textoHTML: textoExtraido };
                 });
 
                 const hayStock = (resultadoScraping.estado === 'disponible');
+                
+                // IMPRIMIR LO QUE EL BOT VIO EXACTAMENTE
+                console.log(`[🕵️‍♂️] Texto capturado por el bot: "${resultadoScraping.textoHTML}"`);
                 console.log(`[🔍] Diagnóstico: ${resultadoScraping.estado.toUpperCase()} | Stock Leído: ${resultadoScraping.stockLeido}`);
 
                 await actualizarProductoWexait(prod.id_wexait, hayStock, resultadoScraping.stockLeido, prod.nombre);
