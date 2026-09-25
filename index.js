@@ -70,7 +70,9 @@ async function verificarStockProveedor() {
                 '--no-sandbox', 
                 '--disable-setuid-sandbox', 
                 '--disable-dev-shm-usage',
-                '--disable-gpu'
+                '--disable-gpu',
+                '--single-process', // Evita que Chrome abra múltiples subprocesos en Railway
+                '--no-zygote'       // Evita que queden procesos huérfanos/fantasma
             ]
         });
         const page = await browser.newPage();
@@ -103,7 +105,7 @@ async function verificarStockProveedor() {
         // --- 2. NAVEGAR Y EXTRAER STOCK EXACTO ---
         for (const prod of PRODUCTOS_A_VIGILAR) {
             console.log(`\n🚀 Revisando stock de: ${prod.nombre}`);
-            console.log(`🔗 URL Visitada: ${prod.url_proveedor}`); // <-- IMPRIMIR URL PARA AUDITAR
+            console.log(`🔗 URL Visitada: ${prod.url_proveedor}`); 
             
             try {
                 await page.goto(prod.url_proveedor, { waitUntil: 'networkidle2', timeout: 60000 });
@@ -119,7 +121,6 @@ async function verificarStockProveedor() {
                     let numeroStock = 0;
                     let textoExtraido = 'No se encontró el texto';
 
-                    // 1. Selector ultra-estricto basado exactamente en la captura de pantalla
                     const stockElement = document.querySelector('.product-stock .stock');
                     
                     if (stockElement && stockElement.innerText) {
@@ -130,7 +131,6 @@ async function verificarStockProveedor() {
                             if (numeroStock > 0) estado = 'disponible';
                         }
                     } else {
-                        // Si no lo encuentra, busca el padre directamente
                         const parentElement = document.querySelector('.product-stock');
                         if (parentElement && parentElement.innerText) {
                             textoExtraido = parentElement.innerText.trim();
@@ -142,7 +142,6 @@ async function verificarStockProveedor() {
                         }
                     }
 
-                    // 2. Respaldo por si el botón está activo pero ocultaron los números
                     const addBtn = document.querySelector('button[name="add-to-cart"], .single_add_to_cart_button');
                     if (estado === 'agotado' && addBtn && addBtn.offsetWidth > 0 && addBtn.offsetHeight > 0) {
                         estado = 'disponible';
@@ -154,7 +153,6 @@ async function verificarStockProveedor() {
 
                 const hayStock = (resultadoScraping.estado === 'disponible');
                 
-                // IMPRIMIR LO QUE EL BOT VIO EXACTAMENTE
                 console.log(`[🕵️‍♂️] Texto capturado por el bot: "${resultadoScraping.textoHTML}"`);
                 console.log(`[🔍] Diagnóstico: ${resultadoScraping.estado.toUpperCase()} | Stock Leído: ${resultadoScraping.stockLeido}`);
 
@@ -171,8 +169,25 @@ async function verificarStockProveedor() {
         console.error("❌ Error General de Puppeteer:", error.message);
     } finally {
         if (browser) {
-            await browser.close();
-            console.log("[*] Navegador cerrado. Ciclo finalizado.");
+            try {
+                // 1. Cerrar manualmente todas las pestañas abiertas
+                const pages = await browser.pages();
+                for (const p of pages) {
+                    await p.close().catch(() => {});
+                }
+                
+                // 2. Matar el proceso desde el sistema operativo (Evita ventanas fantasma en Railway)
+                const childProcess = browser.process();
+                if (childProcess) {
+                    childProcess.kill('SIGKILL');
+                }
+                
+                // 3. Cerrar la instancia de Puppeteer
+                await browser.close().catch(() => {});
+            } catch (e) {
+                // Silenciar errores durante el cierre forzado
+            }
+            console.log("[*] Navegador limpiado desde la raíz. Ciclo finalizado.");
         }
     }
 }
