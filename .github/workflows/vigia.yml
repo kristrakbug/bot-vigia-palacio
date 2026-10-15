@@ -1,0 +1,30 @@
+name: Bot Vigia Palacio (Cada 30 min)
+
+on:
+  schedule:
+    - cron: '0,30 13-23,0-3 * * *'
+  workflow_dispatch:
+
+jobs:
+  escanear-palacio:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Descargar codigo del repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 3. Instalar dependencias y Chrome para Puppeteer
+        run: |
+          npm install
+          npx puppeteer browsers install chrome
+
+      - name: 4. Ejecutar Bot Vigia Palacio
+        env:
+          TOKEN_SECRETO: ${{ secrets.TOKEN_SECRETO }}
+          PALACIO_EMAIL: ${{ secrets.PALACIO_EMAIL }}
+          PALACIO_PASSWORD: ${{ secrets.PALACIO_PASSWORD }}
+        run: node index.js
