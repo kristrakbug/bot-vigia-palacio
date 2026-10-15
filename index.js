@@ -3,13 +3,12 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 const axios = require('axios');
-require('dotenv').config(); 
 
 // ==============================================================================
-// 1. CONFIGURACIÓN PRINCIPAL (PALACIO DIGITAL)
+// 1. CONFIGURACIÓN PRINCIPAL (PALACIO DIGITAL - GITHUB ACTIONS)
 // ==============================================================================
 const URL_WEXAIT = "https://wexait.com/api/v1/actualizar-inventario-secreto";
-const TOKEN_SECRETO = "WexaitBot2026_Admin";
+const TOKEN_SECRETO = process.env.TOKEN_SECRETO;
 
 const URL_LOGIN_PALACIO = "https://palaciodigital.net/login/";
 
@@ -51,13 +50,18 @@ async function actualizarProductoWexait(producto_id, hay_stock, cantidad_stock, 
 }
 
 // ==============================================================================
-// 2. MOTOR DE SCRAPING (EXTRACCIÓN EXACTA Y AUDITABLE)
+// 2. MOTOR DE SCRAPING 
 // ==============================================================================
 async function verificarStockProveedor() {
+    if (!CORREO_PROVEEDOR || !CONTRASENA_PROVEEDOR || !TOKEN_SECRETO) {
+        console.error("❌ Faltan las variables de entorno (Secrets) en GitHub.");
+        process.exit(1);
+    }
+
     const PRODUCTOS_A_VIGILAR = await obtenerProductosDesdeWexait();
     
     if (PRODUCTOS_A_VIGILAR.length === 0) {
-        console.log("⚠️ No hay productos para vigilar. Saltando ciclo...");
+        console.log("⚠️ No hay productos para vigilar. Cerrando...");
         return; 
     }
 
@@ -71,8 +75,8 @@ async function verificarStockProveedor() {
                 '--disable-setuid-sandbox', 
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--single-process', // Evita que Chrome abra múltiples subprocesos en Railway
-                '--no-zygote'       // Evita que queden procesos huérfanos/fantasma
+                '--single-process',
+                '--no-zygote'
             ]
         });
         const page = await browser.newPage();
@@ -167,72 +171,39 @@ async function verificarStockProveedor() {
 
     } catch (error) {
         console.error("❌ Error General de Puppeteer:", error.message);
+        process.exit(1);
     } finally {
         if (browser) {
             try {
-                // 1. Cerrar manualmente todas las pestañas abiertas
                 const pages = await browser.pages();
                 for (const p of pages) {
                     await p.close().catch(() => {});
                 }
-                
-                // 2. Matar el proceso desde el sistema operativo (Evita ventanas fantasma en Railway)
                 const childProcess = browser.process();
                 if (childProcess) {
                     childProcess.kill('SIGKILL');
                 }
-                
-                // 3. Cerrar la instancia de Puppeteer
                 await browser.close().catch(() => {});
-            } catch (e) {
-                // Silenciar errores durante el cierre forzado
-            }
-            console.log("[*] Navegador limpiado desde la raíz. Ciclo finalizado.");
+            } catch (e) {}
+            console.log("[*] Navegador limpiado. Ciclo finalizado.");
         }
     }
 }
 
 // ==============================================================================
-// 3. BUCLE DE TIEMPO
+// 3. EJECUCIÓN ÚNICA PARA GITHUB ACTIONS
 // ==============================================================================
-function obtenerHoraColombia() {
-    const ahora = new Date();
-    const opciones = { timeZone: 'America/Bogota', hour: 'numeric', hour12: false };
-    const formateador = new Intl.DateTimeFormat('en-US', opciones);
-    return parseInt(formateador.format(ahora), 10);
-}
-
 async function iniciarVigilancia() {
     console.log("=======================================================");
-    console.log("🚀 BOT VIGÍA (PALACIO DIGITAL) INICIADO EN SEGUNDO PLANO");
+    console.log("🚀 BOT VIGÍA (PALACIO DIGITAL) INICIADO EN GITHUB ACTIONS");
     console.log("=======================================================");
 
-    const horaInicio = obtenerHoraColombia();
-    if (horaInicio >= 8 && horaInicio < 22) {
-        await verificarStockProveedor();
-    } else {
-        console.log("[Noche COP] Bot iniciado de noche. Reposando hasta las 8 AM.");
-    }
+    await verificarStockProveedor();
 
-    while (true) {
-        const msParaEsperar = 45 * 60 * 1000; 
-        
-        const ahora = new Date();
-        const proximoEscaneo = new Date(ahora.getTime() + msParaEsperar);
-        const formateadorHora = new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: true });
-        
-        console.log(`\n[*] Pausa de 45 minutos activada. Siguiente ciclo a las ${formateadorHora.format(proximoEscaneo)}...`);
-        
-        await new Promise(r => setTimeout(r, msParaEsperar)); 
-        
-        const horaActual = obtenerHoraColombia();
-        
-        if (horaActual >= 8 && horaActual < 22) {
-            await verificarStockProveedor();
-        } else {
-            console.log("[Noche COP] Horario inactivo (10 PM - 8 AM). El bot pasará este ciclo en reposo.");
-        }
-    }
+    console.log("=======================================================");
+    console.log("🏁 Escaneo completado. Apagando contenedor.");
+    console.log("=======================================================");
+    process.exit(0);
 }
 
 iniciarVigilancia();
